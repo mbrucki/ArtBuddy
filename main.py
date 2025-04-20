@@ -180,11 +180,26 @@ Example 4: Input: 'Tell me about Mariusz. He is an artist.' -> Output: {"self_na
 
 # --- End Enhanced LLM Extraction ---
 
-QUESTION_WORDS = ("what", "who", "where", "when", "why", "how", "tell me", "describe", "explain")
+QUESTION_WORDS = (
+    "what", "who", "where", "when", "why", "how", 
+    "is", "are", "am", "was", "were", 
+    "do", "does", "did", 
+    "can", "could", "will", "would", "should", "may", "might",
+    "tell me", "describe", "explain", "list"
+)
 
 def is_direct_question(text: str) -> bool:
-    """Check if the text likely starts with a question asking for information."""
-    return text.strip().lower().startswith(QUESTION_WORDS)
+    """Check if the text likely starts with a question word or ends with a question mark."""
+    cleaned_text = text.strip().lower()
+    # Check if it starts with any of the question words
+    starts_with_question_word = cleaned_text.startswith(QUESTION_WORDS)
+    # Check if it ends with a question mark
+    ends_with_question_mark = cleaned_text.endswith('?')
+    
+    # Consider it a question if either condition is true
+    is_q = starts_with_question_word or ends_with_question_mark
+    logger.debug(f"is_direct_question check for '{text[:50]}...': StartsWord={starts_with_question_word}, EndsMark={ends_with_question_mark} -> Result: {is_q}")
+    return is_q
 
 # --- LLM Response Generation (SIMPLIFIED - No confirmation logic here) ---
 def generate_sync_response(conversation_history: list[dict],
@@ -222,7 +237,7 @@ def generate_sync_response(conversation_history: list[dict],
             initial_prompt_part = f" Your immediate priority is to politely gather the following missing information: {', '.join(missing_info)}. Ask ONE clear question targeting ONE piece of missing information."
         else:
             # Standard interaction focus
-            initial_prompt_part = " Focus on asking specific, curious questions about the art scene (artists, galleries, events, styles, communities) in their city."
+            initial_prompt_part = " Focus on asking specific, curious questions about the art scene (artists, galleries, events, styles, communities) in their city."   
 
     focus_description_text = ""
     if prompt_focus == 'answering':
@@ -354,89 +369,108 @@ async def send_message(message_req: MessageRequest):
             # Simple Yes/No check (can be improved with LLM intent recognition)
             if re.search(r'\b(yes|yeah|correct|true|confirm)\b', user_message, re.IGNORECASE):
                 logger.info(f"[{session_id}] User confirmed existing person '{pending_name}'.")
+                
+                # <<< EDIT: Retrieve original details BEFORE clearing state >>>
+                original_message_to_add = session_state.get("pending_original_message")
+                original_turn_id_to_add = session_state.get("pending_original_turn_id")
+                original_timestamp_to_add = session_state.get("pending_original_timestamp")
+                logger.debug(f"[{session_id}] Retrieved for adding later: msg='{original_message_to_add}', turn='{original_turn_id_to_add}', ts='{original_timestamp_to_add}'")
+
                 # Clear state and set flag to process original message normally
                 should_process_original = True
-                bot_response = f"Got it, thanks for confirming it's the same {pending_name}." # Simple ack
-                # Clear pending state
-                session_state = { "name": session_state.get("name"), "city": session_state.get("city") }
+                session_state = { "name": session_state.get("name"), "city": session_state.get("city") } # Clear pending state
+                bot_response = None # Will be generated below
 
             elif re.search(r'\b(no|nope|wrong|different)\b', user_message, re.IGNORECASE):
-                logger.info(f"[{session_id}] User denied existing person '{pending_name}'. Asking for clarification.")
-                # Acknowledge it's different. Graphiti should have created a new node
-                # when the original message was added (assuming name was different enough).
-                # If Graphiti didn't create a distinct node, we might need manual intervention later.
+                logger.info(f"[{session_id}] User denied existing person '{pending_name}'.")
+                # <<< EDIT: Also retrieve original details here if needed for consistency, though adding might not happen >>>
+                original_message_to_add = session_state.get("pending_original_message")
+                original_turn_id_to_add = session_state.get("pending_original_turn_id")
+                original_timestamp_to_add = session_state.get("pending_original_timestamp")
+                logger.debug(f"[{session_id}] Retrieved (denial case): msg='{original_message_to_add}', turn='{original_turn_id_to_add}', ts='{original_timestamp_to_add}'")
+
+                # Acknowledge it's different. 
                 bot_response = f"Okay, noted that this is a different person than the {pending_name} I knew. Thanks for clarifying."
-                # Clear pending state
-                session_state = { "name": session_state.get("name"), "city": session_state.get("city") }
-                should_process_original = True # Process original message now
+                session_state = { "name": session_state.get("name"), "city": session_state.get("city") } # Clear pending state
+                # Do NOT set should_process_original = True here if we just send the ack above.
+                # If we wanted to process the original message anyway after denial, set it to True.
+                should_process_original = False # Assuming we just acknowledge the denial for now.
+
             else:
                 # Didn't get clear yes/no, repeat confirmation
                 bot_response = f"Sorry, I need a clear confirmation. You mentioned {pending_name}. My records mention: {session_state.get('pending_kg_fact')}. Are you referring to the same person? (Yes/No)"
+                # Keep state as is to repeat question
+                should_process_original = False # Don't process original if asking again
+                # Ensure these don't carry over if state isn't cleared
+                original_message_to_add = None 
+                original_turn_id_to_add = None
+                original_timestamp_to_add = None
 
-        # --- Generate standard response if original message should be processed --- 
+        # --- Process original message OR finalize response --- 
         if should_process_original:
-             logger.info(f"[{session_id}] Processing original message after confirmation: '{original_message}'")
+             logger.info(f"[{session_id}] Processing original message after confirmation: '{original_message_to_add}'") # Use retrieved var
+             # <<< EDIT: Use local variables for adding episode >>>
+             if original_message_to_add and original_turn_id_to_add and original_timestamp_to_add:
+                 try:
+                     # Add the original user message episode HERE after confirmation 
+                     await add_message_episode(
+                         conversation_id, 
+                         original_turn_id_to_add, 
+                         'user', 
+                         original_message_to_add, 
+                         original_timestamp_to_add 
+                     )
+                     logger.info(f"[{session_id}] Added original user message episode post-confirmation.")
+                 except Exception as e_add_orig_user:
+                     logger.error(f"[{session_id}] Error adding original user message episode post-confirmation: {e_add_orig_user}", exc_info=True)
+                     # Decide if we should still proceed. Let's try.
+             else:
+                 # This replaces the previous warning, using the retrieved vars
+                 logger.error(f"[{session_id}] Failed to add original episode: Missing details retrieved from pending state (msg='{original_message_to_add}', turn='{original_turn_id_to_add}', ts='{original_timestamp_to_add}').")
+
+             # Now search memory and generate a standard response to the original message.
              try:
-                 # We already added the episode when the user first sent the original message.
-                 # We just need to generate a standard response to it now.
-                 memory_results = await search_memory(original_message)
+                 memory_results = await search_memory(original_message_to_add) # Use retrieved var
                  extracted_memory_facts = [res.fact for res in memory_results if hasattr(res, 'fact') and res.fact and isinstance(res.fact, str)]
                  
-                 # Generate response based on the original message context
-                 # Use session_state which is now cleared of pending info
-                 # Pass original message to generate_sync_response for context
                  bot_response = generate_sync_response(
-                      chat_histories[session_id], # History includes original msg, confirm/clarify, and bot responses
+                      chat_histories[session_id], 
                       extracted_memory_facts,
-                      original_message, # Pass original message for context
-                      session_state["name"],
+                      original_message_to_add, # Use retrieved var
+                      session_state["name"], # Use the cleared state for name/city
                       session_state["city"]
                  )
-
              except Exception as e_process_orig:
                   logger.error(f"[{session_id}] Error processing original message post-confirmation: {e_process_orig}", exc_info=True)
                   bot_response = "Sorry, I encountered an error while processing that information."
-        # --- End processing original message ---
-
-        # --- Finalize response if needed --- 
-        if bot_response:
-             user_details[session_id] = session_state # Update state (cleared or updated)
+        
+        # --- Finalize response (if not processing original or if original processing finished) --- 
+        if bot_response: # This will be the ack/clarification if should_process_original was False, or the final response if True
+             user_details[session_id] = session_state # Update state (cleared or same)
              chat_histories[session_id].append({"role": "assistant", "content": bot_response})
-             # Add bot's confirmation/clarification response to graphiti
              try:
+                 # Add the bot's response (ack, clarification Q, or final answer)
                  await add_message_episode(conversation_id, turn_id + 1, 'bot', bot_response, datetime.now(timezone.utc))
              except Exception as e_add_bot_confirm:
-                  logger.error(f"[{session_id}] Failed to store bot confirmation response in graph: {e_add_bot_confirm}", exc_info=True)
+                  logger.error(f"[{session_id}] Failed to store bot response/ack in graph: {e_add_bot_confirm}", exc_info=True)
              return {"response": bot_response}
         else:
-             # Should ideally not happen if state logic is correct
-             logger.error(f"[{session_id}] Reached end of pending state handling with no response generated.")
+             # This path should ideally not be reached if should_process_original=True, as bot_response should be generated
+             logger.error(f"[{session_id}] Reached end of pending state handling with no response generated (should_process_original={should_process_original}).")
              raise HTTPException(status_code=500, detail="Internal error handling conversation state.")
 
     else:
         # --- Standard Flow (No Pending State) ---
         logger.info(f"[{session_id}] No pending state, processing normally.")
 
-        # --- Add User Episode FIRST (Let Graphiti handle entity creation) ---
-        try:
-            await add_message_episode(
-                conversation_id, turn_id, 'user', user_message, request_start_time
-            )
-            logger.info(f"[{session_id}] Added user message episode (standard flow).")
-        except Exception as e_add_user:
-            logger.error(f"[{session_id}] Error adding user message episode (standard flow): {e_add_user}", exc_info=True)
-            # If adding fails, we probably can't continue meaningfully
-            raise HTTPException(status_code=500, detail="Error processing message with knowledge graph.")
-
-        # --- Extract Entities (after adding episode) ---
+        # --- Extract Entities ---
         extracted_entities = extract_entities(user_message)
         extracted_self_name = extracted_entities.get("self_name")
         extracted_self_city = extracted_entities.get("self_city")
         mentioned_persons = extracted_entities.get("mentioned_persons", [])
         logger.info(f"[{session_id}] LLM Extracted Entities - SelfName: '{extracted_self_name}', SelfCity: '{extracted_self_city}', Mentioned: {mentioned_persons}")
 
-        # --- Update User Details --- 
-        # Use .copy() to avoid modifying the original dict during iteration if necessary
+        # --- Update User Details ---
         current_session_state = session_state.copy()
         if extracted_self_name and not current_session_state["name"]:
             current_session_state["name"] = extracted_self_name
@@ -444,98 +478,92 @@ async def send_message(message_req: MessageRequest):
         if extracted_self_city and not current_session_state["city"]:
             current_session_state["city"] = extracted_self_city
             logger.info(f"[{session_id}] Updated session city: {extracted_self_city}")
-        # No need to copy back to user_details yet, wait until end of processing
 
         # --- Check Self Name (for info, not confirmation trigger) ---
         person_exists_from_intro = False
         person_fact_from_intro = None
         if extracted_self_name:
              try:
-                 # Check details but don't trigger confirmation based on self-name
                  self_details = await get_person_details(extracted_self_name)
                  if self_details and self_details["exists"]:
                      person_exists_from_intro = True
-                     # Log timestamp info for debugging
                      created_at = self_details.get("created_at")
                      logger.info(f"[{session_id}] Self-introduced person '{extracted_self_name}' exists. CreatedAt: {created_at}")
-                     # Get fact, might be useful for standard response context
                      person_fact_from_intro = await get_person_fact(extracted_self_name)
                  else:
                      logger.info(f"[{session_id}] Self-introduced person '{extracted_self_name}' not found or details error.")
              except Exception as e_kg_self:
                   logger.error(f"[{session_id}] Error checking self-introduced person '{extracted_self_name}': {e_kg_self}", exc_info=True)
 
-        # --- Check Entities & Trigger Confirmation (Skip if it's a direct question) --- 
-        # Combine self-name and mentioned names for checking
+        # --- Check Entities & Trigger Confirmation ---
         names_to_check = ([extracted_self_name] if extracted_self_name else []) + mentioned_persons
-        # Deduplicate while preserving order (important if self_name is also mentioned)
         unique_names_to_check = list(dict.fromkeys(names_to_check))
 
         triggered_confirmation = False
-        # --- Check if it's a question BEFORE checking mentioned persons for confirmation --- 
         is_question = is_direct_question(user_message)
         if is_question:
             logger.info(f"[{session_id}] User message is a question, skipping confirmation checks.")
-        elif unique_names_to_check: # Only check non-questions for confirmation
+        elif unique_names_to_check:
             logger.info(f"[{session_id}] Checking KG for potential confirmation: {unique_names_to_check}")
             for person_name in unique_names_to_check:
                 try:
                     person_details = await get_person_details(person_name)
                     if person_details and person_details["exists"]:
-                        created_at = person_details.get("created_at")
-                        is_preexisting = False
-                        if created_at and isinstance(created_at, datetime) and created_at.tzinfo:
-                            if created_at < (request_start_time - timedelta(seconds=10)):
-                                is_preexisting = True
+                        logger.info(f"[{session_id}] Person '{person_name}' pre-existed (found via get_person_details).")
+                        # No need for timestamp check anymore, if it exists here, it pre-existed this turn.
+                        
+                        person_fact_confirm = await get_person_fact(person_name) 
+                        
+                        if person_name == extracted_self_name:
+                            # Store fact if it was the self-introduced name, might be useful later
+                            person_fact_from_intro = person_fact_confirm 
 
-                        if is_preexisting: 
-                            logger.info(f"[{session_id}] Person '{person_name}' pre-existed.")
-                            person_fact_confirm = await get_person_fact(person_name) # Get formatted fact specifically for confirmation
+                        if person_fact_confirm: # Need a fact to ask for confirmation
+                            # --- Trigger Confirmation State --- 
+                            logger.info(f"[{session_id}] Found pre-existing person '{person_name}' with fact. Triggering confirmation.")
+                            current_session_state["pending_confirmation_type"] = "person_disambiguation"
+                            current_session_state["pending_person_name"] = person_name
+                            current_session_state["pending_kg_fact"] = person_fact_confirm
+                            current_session_state["pending_original_message"] = user_message
+                            current_session_state["pending_original_turn_id"] = turn_id 
+                            current_session_state["pending_original_timestamp"] = request_start_time
                             
-                            # Store the fact retrieved during self-check if it was the self-name
+                            user_details[session_id] = current_session_state # SAVE state NOW
+                            # <<< EDIT: Changed log level to INFO for visibility >>>
+                            logger.info(f"[{session_id}] Saved pending state: msg='{current_session_state.get('pending_original_message')}', turn='{current_session_state.get('pending_original_turn_id')}', ts='{current_session_state.get('pending_original_timestamp')}'")
+
                             if person_name == extracted_self_name:
-                                person_fact_from_intro = person_fact_confirm 
-
-                            if person_fact_confirm: # Need a fact to ask for confirmation
-                                # --- Trigger Confirmation State --- 
-                                current_session_state["pending_confirmation_type"] = "person_disambiguation"
-                                current_session_state["pending_person_name"] = person_name
-                                current_session_state["pending_kg_fact"] = person_fact_confirm
-                                current_session_state["pending_original_message"] = user_message
-                                user_details[session_id] = current_session_state # SAVE state NOW
-
-                                # Adjust question slightly if it's self-introduction vs mention
-                                if person_name == extracted_self_name:
-                                    confirmation_question = f"You introduced yourself as {person_name}. I might know you already - {person_fact_confirm}. Is this correct? Please confirm. (Yes/No)"
-                                else:
-                                    confirmation_question = f"You mentioned {person_name}. I know someone by that name: {person_fact_confirm}. Are you referring to the same person? (Yes/No)"
-                                
-                                chat_histories[session_id].append({"role": "assistant", "content": confirmation_question})
-                                 # Add bot's confirmation question to graphiti
-                                try:
-                                    await add_message_episode(conversation_id, turn_id + 1, 'bot', confirmation_question, datetime.now(timezone.utc))
-                                except Exception as e_add_bot_q:
-                                    logger.error(f"[{session_id}] Failed to store bot confirmation question in graph: {e_add_bot_q}", exc_info=True)
-                                logger.info(f"[{session_id}] Triggered confirmation state for '{person_name}'")
-                                triggered_confirmation = True
-                                return {"response": confirmation_question} # Return immediately
+                                confirmation_question = f"You introduced yourself as {person_name}. I might know you already - {person_fact_confirm}. Is this correct? Please confirm. (Yes/No)"
                             else:
-                                logger.info(f"[{session_id}] Person '{person_name}' pre-existed but no fact found, skipping confirmation.") 
+                                confirmation_question = f"You mentioned {person_name}. I know someone by that name: {person_fact_confirm}. Are you referring to the same person? (Yes/No)"
+                            
+                            chat_histories[session_id].append({"role": "assistant", "content": confirmation_question})
+                            logger.info(f"[{session_id}] Triggered confirmation state for '{person_name}'")
+                            triggered_confirmation = True
+                            return {"response": confirmation_question} 
                         else:
-                            # Entity exists but was likely created by the current message's add_episode call
-                            logger.info(f"[{session_id}] Person '{person_name}' appears newly created or timestamp invalid/missing, skipping confirmation.")
+                            logger.info(f"[{session_id}] Person '{person_name}' pre-existed but no fact found, skipping confirmation.")
                     else:
-                        # Logged already inside get_person_details if not found
-                        pass 
+                         # get_person_details logs if not found or error
+                         pass 
                 except Exception as e_kg_mention:
                     logger.error(f"[{session_id}] Error checking mentioned person '{person_name}': {e_kg_mention}", exc_info=True)
-                    # Continue to next person if error occurs
                 
-                if triggered_confirmation: break # Stop checking after first confirmation
+                if triggered_confirmation: break
         
         # --- Standard Flow Continues if NO confirmation triggered --- 
         if not triggered_confirmation:
-            # Search Memory
+            # <<< EDIT: Add the user message episode HERE if confirmation wasn't triggered >>>
+            try:
+                await add_message_episode(
+                    conversation_id, turn_id, 'user', user_message, request_start_time
+                )
+                logger.info(f"[{session_id}] Added user message episode (standard flow - no confirmation needed).")
+            except Exception as e_add_user:
+                logger.error(f"[{session_id}] Error adding user message episode (standard flow): {e_add_user}", exc_info=True)
+                # Decide if we should proceed or return an error. Let's proceed for now.
+
+            # Search Memory (now happens AFTER adding episode in this path)
             extracted_memory_facts = []
             try:
                 memory_search_results_raw = await search_memory(user_message)
@@ -545,7 +573,7 @@ async def send_message(message_req: MessageRequest):
             except Exception as e_search:
                 logger.error(f"[{session_id}] Error searching memory: {e_search}", exc_info=True)
 
-            # Check City (mostly for logging/potential future use)
+            # Check City 
             city_exists = False 
             if extracted_self_city:
                  try:
@@ -575,7 +603,7 @@ async def send_message(message_req: MessageRequest):
                 logger.error(f"[{session_id}] Failed to store bot response in graph: {e_add_bot}", exc_info=True)
 
             # Finalize standard flow
-            user_details[session_id] = current_session_state # Save final state
+            user_details[session_id] = current_session_state 
             chat_histories[session_id].append({"role": "assistant", "content": bot_response})
             logger.info(f"[{session_id}] Bot response generated (standard flow): {bot_response}")
             return {"response": bot_response}
