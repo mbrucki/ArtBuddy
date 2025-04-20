@@ -1,0 +1,13 @@
+Metadata-Version: 2.1
+Name: graph-service
+Version: 1.0.0.7
+Summary: project descriptions here
+Home-page: https://console.cloud.baidu-int.com/devops/icode/repos/baidu/bce-vistudio/vision-studio/tree/master
+Author: duanshichao
+Author-email: duanshichao@baidu.com
+License: MIT
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
