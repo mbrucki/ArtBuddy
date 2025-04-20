@@ -78,14 +78,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // 5) Handle HTTP errors
       if (!resp.ok) {
-          const msg = data.error || `Error ${resp.status}`;
-          return appendError(msg);
+          // Use detail from FastAPI's HTTPException if available
+          const errorMsg = data.detail || data.error || `Server error: ${resp.status}`;
+          return appendError(errorMsg);
       }
 
-      // 6) Everything's good: show the bot reply using addMessage
-      // Ensure we are using the correct key 'response' from the Flask app
-      addMessage(data.response || "Error: Empty response from server.", 'bot');
-
+      // 6) Handle successful response (single or multiple messages)
+      if (data.responses && Array.isArray(data.responses)) {
+          // Handle the new format: array of response strings
+          data.responses.forEach(response_text => {
+              if(response_text) { // Ensure text is not empty
+                  addMessage(response_text, 'bot');
+              }
+          });
+      } else if (data.response) {
+          // Handle the old format: single response string
+          addMessage(data.response, 'bot');
+      } else {
+          // Handle unexpected success format
+          console.error("Unexpected success response format:", data);
+          appendError("Received an unexpected response from the server.");
+      }
   }
   
     sendButton.addEventListener("click", sendMessage);
