@@ -465,14 +465,18 @@ async def send_message(message_req: MessageRequest):
              except Exception as e_kg_self:
                   logger.error(f"[{session_id}] Error checking self-introduced person '{extracted_self_name}': {e_kg_self}", exc_info=True)
 
-        # --- Check Entities & Trigger Confirmation --- 
+        # --- Check Entities & Trigger Confirmation (Skip if it's a direct question) --- 
         # Combine self-name and mentioned names for checking
         names_to_check = ([extracted_self_name] if extracted_self_name else []) + mentioned_persons
         # Deduplicate while preserving order (important if self_name is also mentioned)
         unique_names_to_check = list(dict.fromkeys(names_to_check))
 
         triggered_confirmation = False
-        if unique_names_to_check:
+        # --- Check if it's a question BEFORE checking mentioned persons for confirmation --- 
+        is_question = is_direct_question(user_message)
+        if is_question:
+            logger.info(f"[{session_id}] User message is a question, skipping confirmation checks.")
+        elif unique_names_to_check: # Only check non-questions for confirmation
             logger.info(f"[{session_id}] Checking KG for potential confirmation: {unique_names_to_check}")
             for person_name in unique_names_to_check:
                 try:
