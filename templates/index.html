@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ART BUDDY</title>
+    <!-- Change filename= to path= for FastAPI/Starlette's url_for -->
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+</head>
+<body>
+    <h1>ART BUDDY</h1>
+    <div id="chat-container">
+        <div id="chat-box">
+            <div class="message bot-message">Hi! I'm Art Buddy. I'd love to learn about the local art scene. To start, could you tell me your name, which city you're in, and how you're connected to the art world there?</div>
+            <!-- Chat messages will be appended here -->
+        </div>
+        <div id="input-area">
+            <input type="text" id="user-input" placeholder="Type your message..." autocomplete="off">
+            <button id="send-button">Send</button>
+        </div>
+    </div>
+
+    <!-- session_id will be empty string if not provided by your FastAPI route -->
+    <input type="hidden" id="session-id" value="{{ session_id or '' }}">
+
+    <!-- Change filename= to path= for FastAPI/Starlette's url_for -->
+    <script src="{{ url_for('static', path='script.js') }}"></script>
+</body>
+</html>
