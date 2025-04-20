@@ -5,14 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ART BUDDY</title>
     <!-- Change filename= to path= for FastAPI/Starlette's url_for -->
-    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h1>ART BUDDY</h1>
-    <div id="chat-container">
-        <div id="chat-box">
-            <div class="message bot-message">Hi! I'm Art Buddy. I'd love to learn about the local art scene. To start, could you tell me your name, which city you're in, and how you're connected to the art world there?</div>
-            <!-- Chat messages will be appended here -->
+    <div class="chat-container">
+        <h1>ART BUDDY</h1>
+        <div class="chat-box" id="chat-box">
+            <!-- Initial bot message rendered server-side -->
+            {% if initial_bot_message %}
+            <div class="message bot-message">
+                {{ initial_bot_message }}
+            </div>
+            {% endif %}
+            <!-- Messages added by JS will appear here -->
         </div>
         <div id="input-area">
             <input type="text" id="user-input" placeholder="Type your message..." autocomplete="off">
@@ -24,6 +29,6 @@
     <input type="hidden" id="session-id" value="{{ session_id or '' }}">
 
     <!-- Change filename= to path= for FastAPI/Starlette's url_for -->
-    <script src="{{ url_for('static', path='script.js') }}"></script>
+    <script src="/static/script.js"></script>
 </body>
 </html>

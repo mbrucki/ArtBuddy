@@ -14,7 +14,7 @@ h1 {
 }
 
 
-#chat-container {
+.chat-container {
     max-width: 600px;
     margin: 20px auto;
     background-color: #FFFFFF; /* white chat box */
@@ -27,7 +27,7 @@ h1 {
 }
 
 
-#chat-box {
+.chat-box {
     flex-grow: 1;
     padding: 15px;
     overflow-y: auto;
@@ -70,20 +70,21 @@ h1 {
 
 #input-area {
     display: flex;
-    padding: 15px;
     background-color: #FFFFFF; /* white input area */
     border-top: 1px solid #eee;
+    padding: 10px 15px;
 }
 
 #user-input {
     flex-grow: 1;
-    padding: 12px;
+    padding: 12px; /* Standard padding */
     border: 1px solid #ccc;
     border-radius: 5px;
     margin-right: 10px;
     background-color: #FFFFFF; /* white input */
     color: #000000;             /* black text */
     font-size: 1em;
+    box-sizing: border-box; 
 }
 
 

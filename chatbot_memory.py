@@ -115,75 +115,113 @@ async def search_memory(query: str) -> list:
 # --- REIMPLEMENTED HELPER FUNCTIONS using graphiti._search ---
 
 async def get_person_details(name: str) -> Optional[Dict[str, Any]]:
-    """Retrieves Person details (existence, summary, created_at) using node search."""
+    """Retrieves Person details (existence, summary, created_at) using a direct Cypher query for exact match."""
     graphiti = await get_graphiti_instance()
-    name_title = name.title()
+    name_param = name # Use original case for parameter, compare lowercased in Cypher
 
-    # Use node search recipe to find the entity by name
-    search_config = NODE_HYBRID_SEARCH_RRF.model_copy(deep=True)
-    search_config.limit = 1 # Get the single most relevant node for this name
+    cypher_query = (
+        "MATCH (e:Entity) "
+        "WHERE toLower(e.name) = toLower($name) "
+        "RETURN e.name AS name, e.summary AS summary, e.created_at AS created_at "
+        "LIMIT 1"
+    )
+    logger.debug(f"Executing exact match Cypher for person details: {cypher_query} with param name='{name_param}'")
 
     try:
-        node_search_results = await graphiti._search(
-            query=f'"{name_title}"', # Search for exact name string
-            config=search_config,
+        # result is a tuple: (records, summary, keys)
+        result = await graphiti.driver.execute_query(
+            cypher_query,
+            parameters_={"name": name_param}, # Pass name as parameter
+            database_=graphiti.database
         )
 
-        if node_search_results and node_search_results.nodes:
-            node = node_search_results.nodes[0]
-            # Attempt to get created_at and summary safely using getattr
-            created_at_raw = getattr(node, "created_at", None)
-            summary = getattr(node, "summary", None)
+        records = result[0] # Get the list of records
+        summary_meta = result[1] # Get the summary object
+        keys = result[2] # Get the keys
+
+        # Log the raw result for debugging
+        logger.info(f"[{name}] Raw driver query result: Records Count={len(records)}, Keys={keys}, Summary Metadata={summary_meta.metadata}")
+
+        if records: # Check if any records were returned
+            record = records[0]
+            # Extract properties from the record using .get() for safety
+            retrieved_name = record.get("name") # Get the name as stored in the DB
+            summary_prop = record.get("summary")
+            created_at_raw = record.get("created_at")
             created_at_dt = None
 
-            logger.debug(f"Raw created_at for '{name_title}' from Node Search: {created_at_raw} (Type: {type(created_at_raw)})")
+            logger.debug(f"Direct Cypher Query found node. Name: '{retrieved_name}', Raw created_at: {created_at_raw} (Type: {type(created_at_raw)})")
 
+            # --- Robust datetime parsing logic ---
             if created_at_raw:
                 parsed = False
-                # Case 1: Already a datetime object (ideal)
                 if isinstance(created_at_raw, datetime):
                     created_at_dt = created_at_raw
                     parsed = True
-                    logger.debug(f"Parsed created_at for '{name_title}' as existing datetime.")
-                # Case 2: Attempt ISO format parsing (handles Z, offsets)
+                    logger.debug(f"Parsed created_at for '{retrieved_name}' as existing datetime.")
                 elif isinstance(created_at_raw, str):
                     try:
-                        dt_str = created_at_raw.split('[')[0] # Remove zone like [UTC] if present
+                        # Handle potential timezone suffix like [UTC] if present
+                        dt_str = created_at_raw.split('[')[0]
+                        # Handle Z notation explicitly by replacing with offset
                         if dt_str.endswith('Z'): dt_str = dt_str[:-1] + '+00:00'
+                        
+                        # <<< EDIT: Truncate fractional seconds to microseconds >>>
+                        if '.' in dt_str:
+                            main_part, fractional_part_tz = dt_str.split('.', 1)
+                            # Separate fractional part from timezone if necessary
+                            fractional_part = fractional_part_tz
+                            tz_part = ''
+                            if '+' in fractional_part_tz:
+                                fractional_part, tz_part = fractional_part_tz.split('+', 1)
+                                tz_part = '+' + tz_part
+                            elif '-' in fractional_part_tz and not fractional_part_tz.startswith('-'): # Ensure it's timezone minus
+                                fractional_part, tz_part = fractional_part_tz.split('-', 1)
+                                tz_part = '-' + tz_part
+                                
+                            if len(fractional_part) > 6:
+                                fractional_part = fractional_part[:6]
+                            dt_str = f"{main_part}.{fractional_part}{tz_part}"
+                            logger.debug(f"Truncated/Reformatted dt_str: {dt_str}")
+                        # <<< End EDIT >>>
+                            
                         created_at_dt = datetime.fromisoformat(dt_str)
                         parsed = True
-                        logger.debug(f"Parsed created_at for '{name_title}' using fromisoformat.")
-                    except ValueError:
-                        logger.warning(f"Could not parse created_at for '{name_title}' using fromisoformat: {created_at_raw}")
-                
-                # Fallback/Alternative parsing can be added here if needed (e.g., specific strptime)
-                
-                # Ensure timezone awareness (assume UTC if naive and parsed successfully)
+                        logger.debug(f"Parsed created_at for '{retrieved_name}' using fromisoformat.")
+                    except ValueError as e:
+                        # Log the error with the specific string that failed
+                        logger.warning(f"Could not parse created_at string '{dt_str}' for '{retrieved_name}' using fromisoformat: {e}")
+                # Add more parsing attempts here if needed
+
                 if parsed and created_at_dt:
+                    # Ensure timezone awareness if parsed successfully but naive
                     if created_at_dt.tzinfo is None or created_at_dt.tzinfo.utcoffset(created_at_dt) is None:
                         created_at_dt = created_at_dt.replace(tzinfo=timezone.utc)
-                        logger.debug(f"Made parsed datetime timezone-aware (UTC) for {name_title}")
+                        logger.debug(f"Made parsed datetime timezone-aware (UTC) for {retrieved_name}")
                 elif not parsed:
                     logger.warning(f"Failed all parsing attempts for created_at: {created_at_raw}")
-                    created_at_dt = None # Ensure it's None if all parsing failed
+                    created_at_dt = None # Ensure it's None if parsing failed
+            # --- End datetime parsing logic ---
 
             details = {
                 "exists": True,
-                "summary": summary,
-                "created_at": created_at_dt # Store potentially None if parsing failed
+                "summary": summary_prop,
+                "created_at": created_at_dt
             }
-            logger.info(f"Details retrieved for Person '{name_title}': Exists=True, ParsedCreatedAt={details['created_at']}")
+            logger.info(f"Details retrieved via Cypher for Person '{retrieved_name}' (Input: '{name}'): Exists=True, ParsedCreatedAt={details['created_at']}")
             return details
         else:
-            logger.info(f"Person '{name_title}' not found via node search.")
+            # This is the path that SHOULD be taken based on your Browser query
+            logger.info(f"Person '{name}' not found via direct Cypher query.")
             return {"exists": False, "summary": None, "created_at": None}
 
     except ServiceUnavailable as e:
-        logger.error(f"Neo4j connection error checking person '{name_title}': {e}")
-        return None # Indicate error
+        logger.error(f"Neo4j connection error checking person '{name}': {e}")
+        return None # Indicate connection error
     except Exception as e:
-        logger.error(f"Error checking person details for '{name_title}': {e}", exc_info=True)
-        return None # Indicate error
+        logger.error(f"Error executing Cypher query for person details '{name}': {e}", exc_info=True)
+        return None # Indicate other error
+
 
 
 async def get_person_fact(name: str) -> Optional[str]:
