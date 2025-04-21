@@ -274,23 +274,24 @@ def generate_sync_response(conversation_history: list[dict],
         prompt_focus = "info_gathering"
         directive = f"Your task is to politely ask ONE clear question to gather ONE piece of missing information: {' or '.join(missing_info)}. Only ask for name or city. The output MUST be a single question ending with a question mark (?)"
 
-    system_prompt = f"""You are Art Buddy, a cultural archivist. Your goal is to learn about the art scene in the user'scity and the user's connection to it.
+    system_prompt = f"""You are Art Buddy, a cultural archivist. Your goal is to learn about the current art scene in the user'scity and the user's connection to it.
 
 CURRENT TASK: {prompt_focus.upper()}
 
 {directive}
 
-*   Keep your question concise.
+*   Keep your questions concise.
 *   Use relevant memory facts (provided below, if any) for context ONLY when asking art questions.
 *   Do NOT acknowledge the user's previous message here; that was handled separately.
 *   Phrase your output ONLY as the question itself.
 
-Art scene interests:
-- Spatial clustering of cultural venues
+Your interests related to the art scene:
+- Spatial clustering of cultural venues - exact places/areas where art community meets, wher art is made, displayed, etc. - identify the hubs
+- Upcomming events, projects, initiatives - exact dates, locations, names
+- Important individuals in the scene - names, roles, connections
 - Collaborative art-world networks
 - Aestheticization of public space
 - Diverse cultural activities
-- Territorial embeddedness
 - Social bonding & cultural cohesion
 """
 
@@ -658,9 +659,9 @@ async def send_message(message_req: MessageRequest):
                             logger.info(f"[{session_id}] Saved pending state: msg='{current_session_state.get('pending_original_message')}', turn='{current_session_state.get('pending_original_turn_id')}', ts='{current_session_state.get('pending_original_timestamp')}'")
 
                             if person_name == extracted_self_name:
-                                confirmation_question = f"You introduced yourself as {person_name}. I might know you already - {person_fact_confirm}. Is this correct? Please confirm. (Yes/No)"
+                                confirmation_question = f"You introduced yourself as {person_name}. I might know you already. {person_fact_confirm}. Is this correct? Please confirm. (Yes/No)"
                             else:
-                                confirmation_question = f"You mentioned {person_name}. I know someone by that name: {person_fact_confirm}. Are you referring to the same person? (Yes/No)"
+                                confirmation_question = f"You mentioned {person_name}. I know someone by that name. {person_fact_confirm}. Are you referring to the same person? (Yes/No)"
                             
                             chat_histories[session_id].append({"role": "assistant", "content": confirmation_question})
                             logger.info(f"[{session_id}] Triggered confirmation state for '{person_name}'")
@@ -674,9 +675,23 @@ async def send_message(message_req: MessageRequest):
                          pass 
                 except Exception as e_kg_mention:
                     logger.error(f"[{session_id}] Error checking mentioned person '{person_name}': {e_kg_mention}", exc_info=True)
-                    confirmed_names_set.add(person_name) # Add to prevent re-check after error
-                
-                if triggered_confirmation: break
+                    # If an error occurs, we still want to mark it as processed for this session
+
+                # <<< EDIT: Add name to set AFTER check/error, regardless of KG existence >>>
+                # This prevents asking again if mentioned later in the same session.
+                # Check if confirmation was triggered *for this specific name* in this iteration
+                # The main `triggered_confirmation` flag might be True from a previous name in the loop.
+                # We rely on the fact that if confirmation WAS triggered, the function returned or loop broke.
+                # However, to be absolutely safe, check if the name is already added.
+                if person_name not in confirmed_names_set:
+                    confirmed_names_set.add(person_name)
+                    # Determine status for logging
+                    status_log = "N/A or Error"
+                    if 'person_details' in locals() and person_details:
+                        status_log = f"found={person_details.get('exists', False)}"
+                    logger.info(f"[{session_id}] Marked '{person_name}' as processed for this session ({status_log}).")
+
+                if triggered_confirmation: break # Exits the loop if *any* name triggered confirmation
         
         # --- Standard Flow Continues if NO confirmation triggered --- 
         if not triggered_confirmation:
