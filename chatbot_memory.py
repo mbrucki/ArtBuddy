@@ -124,7 +124,7 @@ async def get_person_details(name: str) -> Optional[Dict[str, Any]]:
         "WHERE "
         "    toLower(e.name) = toLower($name) OR "
         "    toLower(e.name) STARTS WITH toLower($name) OR "  # Handles "Mira Fernvale" from "Mira"
-        "    toLower($name) STARTS WITH toLower(e.name) "     # Handles "Alina" from "Alina Burak"
+        "    toLower($name) STARTS WITH toLower(e.name) + ' '"
         "RETURN "
         "    e.name AS name, "
         "    e.summary AS summary, "
