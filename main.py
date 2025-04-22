@@ -60,9 +60,23 @@ logger.info("Sync OpenAI client initialized.")
 async def lifespan(app: FastAPI):
     # Actions on startup
     logger.info("Application startup: Initializing Graphiti...")
-    await get_graphiti_instance() # Initialize the global instance
-    logger.info("Graphiti initialized via lifespan.")
+    graphiti_instance = await get_graphiti_instance() # Get the initialized instance
+    if graphiti_instance:
+        logger.info("Graphiti instance obtained successfully.")
+        try:
+            logger.info("Running Graphiti build_indices_and_constraints()...")
+            await graphiti_instance.build_indices_and_constraints()
+            logger.info("Graphiti build_indices_and_constraints() completed successfully.")
+        except Exception as e_init:
+            logger.error(f"Error during Graphiti build_indices_and_constraints(): {e_init}", exc_info=True)
+            # Decide how to handle failure: Continue? Raise? Log and continue?
+            # For now, log and continue, but the app might be in a bad state.
+    else:
+        logger.error("Failed to obtain Graphiti instance during startup.")
+        # Optionally raise an error here to prevent app startup if Graphiti is critical
+
     yield # Application runs here
+
     # Actions on shutdown
     logger.info("Application shutdown: Closing Graphiti connection...")
     await close_graphiti_instance()
@@ -138,6 +152,7 @@ Example 1: Input: 'Hi, I am Helena from Gdynia.' -> Output: {{"self_name": "Hele
 Example 2 (with context): Last Bot Msg: "What is your name?" User Input: "Jane Doe" -> Output: {{"self_name": "Jane Doe", "self_city": null, "mentioned_persons": []}}
 Example 3 (with context): Last Bot Msg: "Which city?" User Input: "London" -> Output: {{"self_name": null, "self_city": "London", "mentioned_persons": []}}
 Example 4: Input: 'Tell me about Mariusz.' -> Output: {{"self_name": null, "self_city": null, "mentioned_persons": ["Mariusz"]}}
+Don't confuse a person's name with a name of an organization or a place.
 """ 
 
     messages = [
@@ -265,7 +280,7 @@ def generate_sync_response(conversation_history: list[dict],
     missing_info = []
     if not user_name: missing_info.append("the user's name")
     if not user_city: missing_info.append("the user's city")
-    
+
     # Simple check: if we have name and city, ask about art, otherwise prioritize missing info.
     if user_name and user_city:
         prompt_focus = "art_question"
@@ -302,7 +317,7 @@ Your interests related to the art scene:
         prompt_messages.append({"role": "system", "content": memory_context})
 
     # Include conversation history for context
-    max_turns_for_context = 10 
+    max_turns_for_context = 10
     history_start_index = max(0, len(conversation_history) - (max_turns_for_context * 2))
     prompt_messages.extend(conversation_history[history_start_index:])
     # Add the latest user message for immediate context, even if history is long
@@ -854,7 +869,7 @@ async def send_message(message_req: MessageRequest):
                     )
                     logger.info(f"[{session_id}] Added user statement episode (Turn {turn_id}, no confirmation needed).")
                 except Exception as e_add_user_s:
-                     logger.error(f"[{session_id}] Error adding user statement episode (Turn {turn_id}): {e_add_user_s}", exc_info=True)
+                    logger.error(f"[{session_id}] Error adding user statement episode (Turn {turn_id}): {e_add_user_s}", exc_info=True)
                 # <<< END EDIT >>>
                 
                 # 2. Generate and Store Acknowledgement 
