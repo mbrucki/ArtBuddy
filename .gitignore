@@ -22,3 +22,11 @@ build/
 
 # macOS specific
 .DS_Store 
+
+# Project-specific non-crucial scripts
+chatbot_backend.py
+quickstart.py
+
+# Old root files (after refactoring)
+main.py
+chatbot_memory.py 

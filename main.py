@@ -4,7 +4,6 @@ import os
 import sys
 import uuid
 import re
-import random
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, List, Dict, Any
 from contextlib import asynccontextmanager # For lifespan management
@@ -12,9 +11,10 @@ import json # Add json import
 
 from dotenv import load_dotenv
 # --- FastAPI Imports ---
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Form # Added Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import RedirectResponse # Added RedirectResponse
 from pydantic import BaseModel
 # --- End FastAPI Imports ---
 from openai import OpenAI
@@ -120,12 +120,6 @@ user_details = {}   # {session_id: {
                      # }}
 
 # --- REMOVED Regex Entity Extraction Helpers ---
-# NAME_PATTERN = ...
-# STOP_WORDS = ...
-# def extract_entity(...)
-# def extract_name(...)
-# CITY_PATTERN = ...
-# def extract_city(...)
 
 # --- NEW Enhanced LLM Entity Extraction --- 
 def extract_entities(user_message: str, last_bot_message_content: Optional[str] = None) -> Dict[str, Any]:
@@ -376,6 +370,10 @@ async def answer_question_from_kg(query: str, session_id: str) -> str:
         return "Sorry, I encountered an error trying to look that up."
 
 
+# --- Hardcoded PIN --- 
+CORRECT_PIN = os.environ.get("APP_PIN", "6712") # Use env var or default
+
+
 # --- FastAPI Routes ---
 
 # Pydantic model for request body
@@ -383,14 +381,14 @@ class MessageRequest(BaseModel):
     message: str
     session_id: str
 
+# --- Step 1: PIN Entry --- 
 @app.get("/")
-async def index(request: Request):
-    """Serves the main HTML page and initiates the conversation."""
+async def get_pin_entry(request: Request):
+    """Serves the initial PIN entry page and creates a session."""
     session_id = str(uuid.uuid4())
-    conversation_id = f"session_{session_id}"
-    logger.info(f"New session started: {session_id}")
-
-    # Initialize chat history and user details (as before)
+    logger.info(f"New session initiation request, generated ID: {session_id}")
+    
+    # Store initial empty state immediately
     chat_histories[session_id] = []
     user_details[session_id] = {
         "name": None, "city": None,
@@ -403,35 +401,135 @@ async def index(request: Request):
         "confirmed_or_processed_names": set(), 
         "session_start_time": datetime.now(timezone.utc)
     }
+    logger.info(f"[{session_id}] Initialized empty state for session.")
 
-    # --- Generate Initial Bot Message --- 
-    initial_bot_message = "Hi! I'm Art Buddy. I'd love to learn about the local art scene. To start, could you tell me your name, which city you're in, and how you're connected to the art world there?"
-    # (Optional: Replace above with a call to generate_sync_response or a new dedicated function if more dynamic intro is needed)
-    logger.info(f"[{session_id}] Generated initial bot message: {initial_bot_message}")
+    return templates.TemplateResponse(
+        "pin_entry.html", 
+        {"request": request, "session_id": session_id, "error": None}
+    )
 
-    # Add initial message to history 
-    chat_histories[session_id].append({"role": "assistant", "content": initial_bot_message})
-    # <<< EDIT: Removed adding initial message episode to graph >>>
-    # try:
-    #     initial_turn_id = 0 
-    #     await add_message_episode(conversation_id, initial_turn_id, 'bot', initial_bot_message, datetime.now(timezone.utc))
-    #     logger.info(f"[{session_id}] Added initial bot message episode to graph.")
-    # except Exception as e_add_initial:
-    #      logger.error(f"[{session_id}] Failed to store initial bot message in graph: {e_add_initial}", exc_info=True)
-
-    try:
-        # Pass the initial message to the template
+@app.post("/")
+async def post_pin_entry(request: Request, session_id: str = Form(...), pin: str = Form(...)):
+    """Handles PIN submission. Redirects to terms on success, re-renders PIN page on failure."""
+    logger.info(f"[{session_id}] Received PIN submission.")
+    
+    if session_id not in user_details:
+        logger.warning(f"[{session_id}] PIN submitted for unknown session. Redirecting to start.")
+        # Redirect to GET / to generate a new session
+        return RedirectResponse("/", status_code=303) 
+        
+    if pin == CORRECT_PIN:
+        logger.info(f"[{session_id}] PIN correct. Redirecting to terms.")
+        # Redirect using GET method (status 303)
+        return RedirectResponse(f"/terms?session_id={session_id}", status_code=303)
+    else:
+        logger.warning(f"[{session_id}] Incorrect PIN entered.")
         return templates.TemplateResponse(
-            "index.html", 
+            "pin_entry.html", 
             {
                 "request": request, 
                 "session_id": session_id, 
-                "initial_bot_message": initial_bot_message # Pass the message
+                "error": "Incorrect PIN. Please try again."
+            }
+        )
+
+# --- Step 2: Terms --- 
+@app.get("/terms")
+async def get_terms(request: Request, session_id: str):
+    """Displays the terms and conditions page."""
+    logger.info(f"[{session_id}] Displaying terms page.")
+    if session_id not in user_details:
+        logger.warning(f"[{session_id}] Attempted to access terms for unknown session. Redirecting to start.")
+        return RedirectResponse("/", status_code=303)
+        
+    return templates.TemplateResponse(
+        "terms.html", 
+        {"request": request, "session_id": session_id}
+    )
+
+# Note: The form in terms.html now POSTs directly to /instructions
+# We don't strictly need a POST /terms route if we don't need to record acceptance server-side before proceeding.
+# However, if we wanted to log acceptance, we'd use a POST /terms route like this:
+# @app.post("/terms")
+# async def post_terms(session_id: str = Form(...)):
+#     logger.info(f"[{session_id}] Terms accepted. Redirecting to instructions.")
+#     if session_id not in user_details:
+#         return RedirectResponse("/", status_code=303)
+#     # Log acceptance here if needed 
+#     return RedirectResponse(f"/instructions?session_id={session_id}", status_code=303)
+
+# --- Step 3: Instructions --- 
+@app.post("/instructions") # Changed from GET to POST to receive form from terms.html
+async def post_to_instructions(request: Request, session_id: str = Form(...)):
+    """Handles submission from terms page and displays the instructions page."""
+    logger.info(f"[{session_id}] Accepted terms. Displaying instructions page.")
+    if session_id not in user_details:
+        logger.warning(f"[{session_id}] Attempted to access instructions for unknown session. Redirecting to start.")
+        return RedirectResponse("/", status_code=303)
+        
+    return templates.TemplateResponse(
+        "instructions.html", 
+        {"request": request, "session_id": session_id}
+    )
+
+# Note: The form in instructions.html now POSTs directly to /chat
+# Similar to terms, we don't strictly need a POST /instructions if we don't need to log completion server-side.
+# If needed:
+# @app.post("/instructions")
+# async def post_instructions(session_id: str = Form(...)):
+#     logger.info(f"[{session_id}] Instructions viewed. Redirecting to chat.")
+#     if session_id not in user_details:
+#         return RedirectResponse("/", status_code=303)
+#     return RedirectResponse(f"/chat?session_id={session_id}", status_code=303)
+
+
+# --- Step 4: Chat Interface --- 
+@app.post("/chat") # Changed from GET to POST to receive form from instructions.html
+async def post_to_chat(request: Request, session_id: str = Form(...)):
+    """Handles submission from instructions and serves the main chat HTML page."""
+    logger.info(f"[{session_id}] Proceeding to chat interface.")
+
+    if session_id not in chat_histories or session_id not in user_details:
+        logger.warning(f"[{session_id}] Chat requested for unknown/invalid session. Redirecting to start.")
+        # Clear any partial data just in case
+        if session_id in chat_histories: del chat_histories[session_id]
+        if session_id in user_details: del user_details[session_id]
+        return RedirectResponse("/", status_code=303)
+
+    # --- Generate Initial Bot Message (Only if history is empty) --- 
+    initial_bot_message = "Hi! I'm Art Buddy. I'd love to learn about the local art scene. To start, could you tell me your name, which city you're in, and how you're connected to the art world there?"
+    if not chat_histories[session_id]: # Check if history is empty before adding
+        logger.info(f"[{session_id}] Generating initial bot message for chat: {initial_bot_message}")
+        chat_histories[session_id].append({"role": "assistant", "content": initial_bot_message})
+        # Note: We are NOT adding the initial message to the graph here. 
+    else:
+        # If history is not empty, likely a page refresh or back button. 
+        # Get the last message to display. 
+        # This might need refinement depending on desired refresh behavior. 
+        last_message = chat_histories[session_id][-1]
+        if last_message["role"] == "assistant":
+             initial_bot_message = last_message["content"]
+             logger.info(f"[{session_id}] Chat page reloaded, using last bot message: {initial_bot_message}")
+        else: # Last message was user, maybe show a generic prompt?
+            initial_bot_message = "Please enter your message."
+            logger.info(f"[{session_id}] Chat page reloaded after user message, showing generic prompt.")
+
+    try:
+        return templates.TemplateResponse(
+            "chat.html", # Use the renamed template
+            {
+                "request": request, 
+                "session_id": session_id, 
+                "initial_bot_message": initial_bot_message, # Pass the message
+                "chat_history": chat_histories[session_id] # Pass full history for rendering
             }
         )
     except NameError:
          logger.critical("Jinja2Templates object 'templates' not initialized. Cannot serve HTML.")
          raise HTTPException(status_code=500, detail="Server configuration error: Template engine not found.")
+    except KeyError:
+         logger.error(f"[{session_id}] Session data missing unexpectedly when rendering chat. Redirecting to start.")
+         return RedirectResponse("/", status_code=303)
 
 
 @app.post("/send_message")
@@ -440,15 +538,14 @@ async def send_message(message_req: MessageRequest):
     user_message = message_req.message
     session_id = message_req.session_id
 
-    # <<< EDIT: Remove old inactivity timeout check block >>>
-    # --- Session Initialization Check --- 
-    if session_id not in user_details:
-        # If session doesn't exist (e.g., after duration end), maybe return error or redirect
+    # --- Session Initialization/Validity Check --- 
+    if session_id not in user_details or session_id not in chat_histories:
+        # If session doesn't exist (e.g., after duration end or invalid ID), return error
         logger.warning(f"Received message for unknown/expired session ID: {session_id}. Denying request.")
         raise HTTPException(status_code=404, detail="Session not found or has ended.")
         
     # --- Proceed with normal processing --- 
-    turn_id = len(chat_histories[session_id]) + 1
+    turn_id = len(chat_histories[session_id]) # Turns are 0-indexed now?
     conversation_id = f"session_{session_id}"
     request_start_time = datetime.now(timezone.utc) 
 
@@ -475,35 +572,8 @@ async def send_message(message_req: MessageRequest):
         original_timestamp_to_add = session_state.get("pending_original_timestamp")
         # pending_name = session_state.get("pending_person_name") # May be string or list now
 
-        # --- SINGLE PERSON CONFIRMATION (Original Logic - Keep for robustness) ---
-        if pending_type == "person_disambiguation":
-            pending_name = session_state.get("pending_person_name")
-            logger.debug(f"[{session_id}] Handling single confirmation for '{pending_name}'")
-            # (Keep original handling logic for single name confirmation here)
-            if re.search(r'\b(yes|yeah|correct|true|confirm)\b', user_message, re.IGNORECASE):
-                logger.info(f"[{session_id}] User confirmed existing person '{pending_name}'.")
-                should_process_original = True
-                session_state = { "name": session_state.get("name"), "city": session_state.get("city") } # Clear pending state
-                confirmed_names_set.add(pending_name) # Add the single confirmed name
-                session_state["confirmed_or_processed_names"] = confirmed_names_set
-                session_state["session_start_time"] = session_start_time # Ensure start time persists
-                bot_response = None # Will proceed to process original message
-            elif re.search(r'\b(no|nope|wrong|different)\b', user_message, re.IGNORECASE):
-                logger.info(f"[{session_id}] User denied existing person '{pending_name}'.")
-                bot_response = f"Okay, noted that this is a different person than the {pending_name} I knew. Thanks for clarifying."
-                session_state = { "name": session_state.get("name"), "city": session_state.get("city") } # Clear pending state
-                confirmed_names_set.add(pending_name) # Add the single denied name
-                session_state["confirmed_or_processed_names"] = confirmed_names_set
-                session_state["session_start_time"] = session_start_time # Ensure start time persists
-                should_process_original = False
-            else:
-                # Didn't get clear yes/no, repeat original single confirmation question
-                bot_response = f"Sorry, I need a clear confirmation. You mentioned {pending_name}. My records mention: {session_state.get('pending_kg_fact')}. Are you referring to the same person? (Yes/No)"
-                should_process_original = False 
-        
         # --- MULTI PERSON CONFIRMATION SEQUENCE --- 
-        elif pending_type == "person_disambiguation_multi":
-            # <<< EDIT: Reworked multi-confirmation handler >>>
+        if pending_type == "person_disambiguation_multi":
             # Retrieve sequence state
             confirmations_list = session_state.get("pending_confirmations_list", []) # List of {name, fact} dicts
             current_index = session_state.get("pending_current_person_index", -1)
@@ -594,7 +664,6 @@ async def send_message(message_req: MessageRequest):
                 user_details[session_id] = session_state 
                 should_process_original = False
                 return {"response": bot_response} 
-            # <<< END EDIT >>>
 
         # --- Fallback / Other Pending Types (if any added later) ---
         else:
@@ -920,13 +989,6 @@ async def send_message(message_req: MessageRequest):
                 
                 # Append follow-up/goodbye message episode to graph AND history
                 # <<< EDIT: REMOVE adding follow_up_content episode >>>
-                # follow_up_turn_id = ack_turn_id + 1
-                # try:
-                #     await add_message_episode(conversation_id, follow_up_turn_id, 'bot', follow_up_content, datetime.now(timezone.utc))
-                #     logger.info(f"[{session_id}] Added follow_up/goodbye episode (Turn {follow_up_turn_id}).")
-                # except Exception as e_add_follow_up:
-                #     logger.error(f"[{session_id}] Failed to store follow_up/goodbye episode: {e_add_follow_up}", exc_info=True)
-                # <<< END EDIT >>>
                 
                 # Append follow-up/goodbye to chat history only
                 chat_histories[session_id].append({"role": "assistant", "content": follow_up_content})

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms and Conditions - Art Buddy Study</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding: 2rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Consent to Participate in Case Study of the ArtBuddy MVP </h1>
+        <p>Welcome to the Art Buddy research study.</p>
+        <p>
+            Please read this clause carefully before agreeing to participate. Your participation is entirely voluntary, and you may withdraw at any time without penalty.
+            <br>
+            <br>
+            Purpose of the Study
+            You are invited to take part in a case study evaluating the minimum‑viable ArtBuddy chatbot, designed to capture and archive local art‑scene knowledge through conversation citeturn0file0.
+            <br>
+            <br>
+            Data Collected
+            <br>
+            <br>
+            All messages exchanged between you and ArtBuddy (both your inputs and the chatbot's outputs) will be recorded verbatim.
+            Each message will be timestamped and associated with a unique session identifier—not your real name—so that transcripts can be linked but your identity remains pseudonymous.
+            <br>
+            <br>
+            Use of Data
+
+            <br>
+            <br>
+            Verbatim transcripts will be used solely for research purposes: to assess conversational quality, entity‑extraction accuracy, memory management, and overall user experience.
+            <br>
+            <br>
+            Excerpts (anonymized) may appear in academic publications or presentations about ArtBuddy.
+            <br>
+            <br>
+            Storage and Retention
+
+            <br>
+            <br>
+            Your conversation data will be securely stored in our Graphiti/Neo4j knowledge‑graph system.
+            <br>
+            <br>
+            Data will be retained for up to three (3) months following your session. At the end of this period, all verbatim message content and associated metadata will be permanently deleted and irrecoverable.
+            <br>
+            <br>
+            Confidentiality and Security
+            <br>
+            <br>
+            Only authorized research personnel will access the data.    
+            <br>
+            <br>
+
+            Data transmission and storage are protected by industry‑standard encryption and access controls.
+            <br>
+            <br>
+            Voluntary Participation & Withdrawal
+            <br>
+            <br>
+            Participation is voluntary. You may stop the conversation and request deletion of your session data at any time before the 3‑month retention period ends.
+            <br>
+            <br>
+            To withdraw or request deletion, please contact the study coordinator (see below). After deletion, your data cannot be recovered.
+            <br>
+            <br>
+            Potential Risks & Benefits
+
+            <br>
+            <br>
+            Risks: Minimal risk, equivalent to sharing text responses in an online chat.
+            <br>
+            <br>
+            Benefits: Contributing to the development of a tool that preserves local cultural heritage and advances conversational‑AI research.
+            <br>
+            <br>
+            Contact Information
+            
+            <br>
+            <br>
+            If you have questions, concerns, or wish to withdraw, please contact:
+            <br>
+            <br>
+            Helena Kaczmarek (helena.kaczmarek@uni‑ulm.de)
+            <br>
+            Jessica Thiessen (jessica.thiessen@uni‑ulm.de)
+
+            By clicking "Accept", you agree in this case study under the terms described.
+
+            <!-- END OF T&C TEXT -->
+        </p>
+        <hr>
+        <form action="/instructions" method="post">
+            <input type="hidden" name="session_id" value="{{ session_id }}">
+            <button type="submit" class="btn btn-primary">Accept and Continue</button>
+        </form>
+    </div>
+</body>
+</html> 
