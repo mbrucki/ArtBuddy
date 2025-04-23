@@ -69,4 +69,10 @@ A `Dockerfile` is provided for containerization.
     ```bash
     docker run -p 5001:80 --env-file .env artbuddy
     ```
-    *(Note: The Dockerfile exposes port 80 internally, which is mapped to 5001 on the host here. Adjust ports as needed.)* 
+    *(Note: The Dockerfile exposes port 80 internally, which is mapped to 5001 on the host here. Adjust ports as needed.)*
+
+##  Acknowledgements
+
+This project utilizes the Graphiti library for building knowledge graphs.
+
+- **Graphiti:** [https://github.com/getzep/graphiti](https://github.com/getzep/graphiti)
