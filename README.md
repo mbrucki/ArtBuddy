@@ -2,39 +2,6 @@
 
 A FastAPI-based chatbot designed to capture and archive local art-scene knowledge through conversation, leveraging Graphiti for dynamic knowledge graph memory.
 
-## Project Structure
-
-The project follows a standard FastAPI application structure:
-
-```
-my_artbot_app/
-├── app/                 # Core application module
-│   ├── __init__.py
-│   ├── main.py          # FastAPI app creation, lifespan, routers
-│   ├── config.py        # Environment variables & configuration
-│   ├── state.py         # In-memory session state (Warning: not for production)
-│   ├── routers/         # Request handlers
-│   │   ├── auth.py      # PIN/Terms/Instructions flow
-│   │   └── chat.py      # Chat interface & message handling
-│   ├── services/        # Business logic & external integrations
-│   │   ├── graphiti.py  # Graphiti instance & core operations
-│   │   ├── memory.py    # Specific KG queries (people, facts)
-│   │   └── llm.py       # OpenAI client & LLM interactions
-│   ├── models/          # Pydantic data models
-│   │   └── message.py
-│   └── utils/           # Utility functions
-│       └── parsing.py
-├── static/              # CSS, JavaScript
-├── templates/           # HTML templates
-├── .env.example         # Example environment variables file
-├── .gitignore
-├── Dockerfile
-├── requirements.txt
-└── README.md            # This file
-```
-
-*(Note: Original `main.py`, `chatbot_memory.py`, `chatbot_backend.py`, `quickstart.py` are kept in the root but added to `.gitignore` after refactoring)*
-
 ## Setup
 
 1.  **Clone the repository:**
