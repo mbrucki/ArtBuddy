@@ -7,7 +7,8 @@ from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 # Import config and state
-from app.config import CORRECT_PIN
+# from app.config import CORRECT_PIN
+from app.config import APP_PIN # Use the renamed variable
 from app.state import user_details, chat_histories # Direct state import (simple approach)
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ async def post_pin_entry(request: Request, session_id: str = Form(...), pin: str
         logger.warning(f"[{session_id}] PIN submitted for unknown session. Redirecting to start.")
         return RedirectResponse("/", status_code=303)
 
-    if pin == CORRECT_PIN:
+    if pin == APP_PIN:
         logger.info(f"[{session_id}] PIN correct. Redirecting to terms.")
         # Redirect to GET /terms
         terms_url = request.url_for('get_terms').include_query_params(session_id=session_id)
