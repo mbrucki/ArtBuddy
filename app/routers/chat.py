@@ -196,7 +196,7 @@ async def send_message(message_req: MessageRequest):
             is_session_over = False
             if session_start_time and isinstance(session_start_time, datetime):
                 elapsed_time = datetime.now(timezone.utc) - session_start_time
-                max_duration = timedelta(minutes=8)
+                max_duration = timedelta(minutes=60)
                 logger.info(f"[{session_id}] Duration Check (Post-Sequence): Elapsed='{elapsed_time}'")
                 if elapsed_time > max_duration:
                     is_session_over = True
@@ -275,7 +275,7 @@ async def send_message(message_req: MessageRequest):
             is_session_over = False
             if session_start_time and isinstance(session_start_time, datetime):
                 elapsed_time = datetime.now(timezone.utc) - session_start_time
-                max_duration = timedelta(minutes=8)
+                max_duration = timedelta(minutes=60)
                 logger.info(f"[{session_id}] Duration Check (Question): Elapsed='{elapsed_time}'")
                 if elapsed_time > max_duration:
                     is_session_over = True
@@ -386,7 +386,7 @@ async def send_message(message_req: MessageRequest):
                 is_session_over = False
                 if session_start_time and isinstance(session_start_time, datetime):
                     elapsed_time = datetime.now(timezone.utc) - session_start_time
-                    max_duration = timedelta(minutes=8)
+                    max_duration = timedelta(minutes=60)
                     logger.info(f"[{session_id}] Duration Check (Std Flow): Elapsed='{elapsed_time}'")
                     if elapsed_time > max_duration:
                         is_session_over = True
