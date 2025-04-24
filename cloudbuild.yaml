@@ -23,7 +23,7 @@ steps:
     - 'run'
     - 'deploy'
     - 'artbuddy-service' # Your Cloud Run service name
-    - '--image=europe-west1-docker.pkg.dev/$PROJECT_ID/artbuddy-repo/artbuddy:$SHORT_SHA'
+    - '--image=europe-west1-docker.pkg.dev/$PROJECT_ID/artbuddy-repo/artbuddy:latest'
     - '--region=europe-west1'
     - '--platform=managed'
     - '--allow-unauthenticated'
