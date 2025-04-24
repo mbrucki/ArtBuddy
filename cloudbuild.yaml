@@ -41,4 +41,8 @@ images:
   - 'europe-west1-docker.pkg.dev/$PROJECT_ID/artbuddy-repo/artbuddy:latest'
 
 # Optional: Set timeout for the build
-timeout: '1200s' # 20 minutes 
+timeout: '1200s' # 20 minutes
+
+# Add logging option to satisfy service account requirements
+options:
+  logging: CLOUD_LOGGING_ONLY 
