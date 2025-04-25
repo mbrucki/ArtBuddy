@@ -145,43 +145,70 @@ Focus on accuracy and conciseness."""
 
 def generate_sync_response(
     conversation_history: List[Dict[str, str]],
-    all_relevant_memory: List[str],
+    all_relevant_memory: List[str], # Holds KG facts in question flow OR standard memory
     user_message: str, # Still useful for context
     user_name: Optional[str],
     user_city: Optional[str]
 ) -> str:
-    """Generates the art-world related follow-up question using LLM."""
+    """Generates the art-world related follow-up question OR answers a question using LLM."""
     if not sync_openai_client:
         logger.error("OpenAI client not initialized. Cannot generate response.")
-        fallback = f"What's interesting in the {user_city or 'local'} art scene right now?"
-        logger.info(f"Using fallback question on error: '{fallback}'")
+        # Fallback adjusted slightly based on potential context
+        fallback = f"What's interesting in the {user_city or 'local'} art scene right now?" if user_city else "What's interesting in the local art scene right now?"
+        logger.info(f"Using fallback question on client error: '{fallback}'")
         return fallback
 
-    logger.info(f"Generating follow-up question based on user: {user_name or 'Unknown'} in {user_city or 'Unknown'}")
-    # ... (rest of the function body from original main.py) ...
+    logger.info(f"Generating response based on user: {user_name or 'Unknown'} in {user_city or 'Unknown'}")
+
     prompt_focus = "standard"
     missing_info = []
     if not user_name: missing_info.append("the user's name")
     if not user_city: missing_info.append("the user's city")
 
-    # Simple check: if we have name and city, ask about art, otherwise prioritize missing info.
-    if user_name and user_city:
-        prompt_focus = "art_question"
-        directive = "Your task is to ask ONE specific, curious follow-up question about the art scene (artists, galleries, events, styles, communities) in the user's city, potentially relating to the conversation history or memory facts. The output MUST be a single question ending with a question mark (?)"
-    else:
-        prompt_focus = "info_gathering"
-        directive = f"Your task is to politely ask ONE clear question to gather ONE piece of missing information: {' or '.join(missing_info)}. Only ask for name or city. The output MUST be a single question ending with a question mark (?)"
+    # --- MODIFIED LOGIC ---
+    # Check if we received KG facts (passed via all_relevant_memory in the question flow)
+    # We infer it's a question answer context if all_relevant_memory is not None
+    # Note: An empty list [] means KG search ran but found nothing. None means KG search wasn't run (standard flow) or failed.
+    # Let's refine: Assume question answer context if the PREVIOUS user message was a question
+    # For now, we'll approximate by checking if `all_relevant_memory` list exists (even if empty),
+    # as it's only populated this way in the question flow currently.
+    # A more robust way would be to pass an explicit flag from chat.py
+    is_question_answer_context = isinstance(all_relevant_memory, list) # True if KG search was attempted (even if empty result)
 
-    system_prompt = f"""You are Art Buddy, a cultural archivist. Your goal is to learn about the current art scene in the user'scity and the user's connection to it.
+    if is_question_answer_context:
+        prompt_focus = "question_answer"
+        # New directive specifically for answering based on provided facts
+        directive = ("Based on the user's last message (which was a question) and the "
+                     "Relevant Memory Facts provided below (if any), generate a conversational answer. "
+                     "If the facts directly answer the question, incorporate them naturally. "
+                     "If the facts are related but don't fully answer, state that and perhaps mention a related point from the facts. "
+                     "If no relevant facts were provided (fact list is empty), state that you couldn't find specific information in your memory for their question. "
+                     "Keep the response concise and directly address the user's question. "
+                     "Do NOT ask for the user's name or city now, focus only on answering the question.")
+    elif user_name and user_city:
+        # Original logic: Ask art questions if name/city are known AND not answering a question
+        prompt_focus = "art_question"
+        directive = ("Your task is to ask ONE specific, curious follow-up question about the art scene "
+                     "(artists, galleries, events, styles, communities) in the user's city, potentially "
+                     "relating to the conversation history. The output MUST be a single question ending with a question mark (?)")
+    else:
+        # Original logic: Gather missing info if name/city are unknown AND it's not a question-answer context
+        prompt_focus = "info_gathering"
+        directive = (f"Your task is to politely ask ONE clear question to gather ONE piece of missing information: "
+                     f"{' or '.join(missing_info)}. Only ask for name or city. The output MUST be a single question "
+                     f"ending with a question mark (?)")
+
+    # Construct system_prompt using the chosen directive
+    system_prompt = f"""You are Art Buddy, a cultural archivist. Your goal is to learn about the current art scene in the user's city and the user's connection to it.
 
 CURRENT TASK: {prompt_focus.upper()}
 
 {directive}
 
-*   Keep your questions concise.
-*   Use relevant memory facts (provided below, if any) for context ONLY when asking art questions.
+*   Keep your responses/questions concise.
+*   Use relevant memory facts (provided below, if any) for context ONLY when answering or asking art questions.
 *   Do NOT acknowledge the user's previous message here; that was handled separately.
-*   Phrase your output ONLY as the question itself.
+*   Phrase your output ONLY as the answer/question itself.
 
 Your interests related to the art scene:
 - Spatial clustering of cultural venues - exact places/areas where art community meets, wher art is made, displayed, etc. - identify the hubs
@@ -195,38 +222,58 @@ Your interests related to the art scene:
 
     prompt_messages = [{'role': 'system', 'content': system_prompt.strip()}]
 
-    if prompt_focus == "art_question" and all_relevant_memory:
-        memory_context = "Relevant Memory Facts (Context): " + "; ".join(all_relevant_memory)
-        prompt_messages.append({"role": "system", "content": memory_context})
+    # Add memory facts if relevant for the current context (answering or art question)
+    # Check if all_relevant_memory is a non-empty list
+    if (is_question_answer_context or prompt_focus == "art_question") and all_relevant_memory and isinstance(all_relevant_memory, list):
+         memory_context = "Relevant Memory Facts (Context): " + "; ".join(all_relevant_memory)
+         prompt_messages.append({"role": "system", "content": memory_context})
 
     # Include conversation history for context
-    max_turns_for_context = 10
+    max_turns_for_context = 10 # How many pairs of user/assistant messages
     history_start_index = max(0, len(conversation_history) - (max_turns_for_context * 2))
     prompt_messages.extend(conversation_history[history_start_index:])
 
-    logger.debug(f"Sending Follow-up Question prompt to OpenAI: {prompt_messages}")
+    logger.debug(f"Sending Response Generation prompt to OpenAI (Task: {prompt_focus}): {prompt_messages}")
+
+    # Adjust max_tokens based on task
+    max_tokens_for_call = 150 if is_question_answer_context else 70 # Allow longer answers than questions
 
     try:
         response = sync_openai_client.chat.completions.create(
-            model="gpt-4.1-nano",
+            model="gpt-4.1-nano", # Consider gpt-4o-mini or similar if available/needed
             messages=prompt_messages,
             temperature=0.7,
-            max_tokens=70, # Reduced slightly as it's just a question
+            max_tokens=max_tokens_for_call,
         )
         if response.choices and response.choices[0].message and response.choices[0].message.content:
-            question = response.choices[0].message.content.strip()
-            if not question.endswith('?'):
-                logger.warning(f"Generated follow-up did not end with '?'. Appending one. Original: '{question}'")
-                question += ' ?' # Add space for safety
-            logger.info(f"Generated follow-up question: '{question}'")
-            return question
+            generated_content = response.choices[0].message.content.strip()
+
+            # Simple validation based on expected output type
+            if prompt_focus == "art_question" or prompt_focus == "info_gathering":
+                if not generated_content.endswith('?'):
+                     logger.warning(f"Generated follow-up question did not end with '?'. Appending one. Original: '{generated_content}'")
+                     generated_content += '?'
+            elif prompt_focus == "question_answer":
+                 # Optional: Add validation if answers should NOT end with '?'
+                 pass
+
+            logger.info(f"Generated LLM content (Task: {prompt_focus}): '{generated_content}'")
+            return generated_content
         else:
-            logger.warning("Follow-up question generation response was empty.")
-            fallback = f"What else can you tell me about the art scene in {user_city or 'your city'}?"
-            logger.info(f"Using fallback question: '{fallback}'")
+            logger.warning(f"LLM response generation was empty (Task: {prompt_focus}).")
+            # Adjust fallback based on context
+            if is_question_answer_context:
+                 fallback = "I looked for that, but couldn't formulate a specific answer right now."
+            else:
+                 fallback = f"What else can you tell me about the art scene in {user_city or 'your city'}?"
+            logger.info(f"Using fallback response: '{fallback}'")
             return fallback
     except Exception as e:
-        logger.error(f"Error generating follow-up question: {e}", exc_info=True)
-        fallback = f"What's interesting in the {user_city or 'local'} art scene right now?"
-        logger.info(f"Using fallback question on error: '{fallback}'")
+        logger.error(f"Error generating LLM response (Task: {prompt_focus}): {e}", exc_info=True)
+         # Adjust fallback based on context
+        if is_question_answer_context:
+            fallback = "Sorry, I encountered an error trying to answer your question."
+        else:
+            fallback = f"What's interesting in the {user_city or 'local'} art scene right now?"
+        logger.info(f"Using fallback response on error: '{fallback}'")
         return fallback 
