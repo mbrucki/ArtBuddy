@@ -1,7 +1,8 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env file but don't override existing environment variables
+load_dotenv(override=False)
 
 # Neo4j/OpenAI Config
 NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
@@ -10,7 +11,7 @@ NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD', 'password')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
 # Hardcoded PIN (Consider moving to env var if security is critical)
-CORRECT_PIN = os.environ.get("APP_PIN", "6712")
+APP_PIN = os.environ.get("APP_PIN", "6712")
 
 # Basic validation
 if not all([NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD]):

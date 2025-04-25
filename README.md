@@ -2,7 +2,7 @@
 
 A FastAPI-based chatbot designed to capture and archive local art-scene knowledge through conversation, leveraging Graphiti for dynamic knowledge graph memory.
 
-## Demo
+## Demo 
 
 
 ## Setup

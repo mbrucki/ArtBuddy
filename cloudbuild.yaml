@@ -1,0 +1,48 @@
+steps:
+# 1. Build the container image for linux/amd64
+- name: 'gcr.io/cloud-builders/docker'
+  args: [
+          'build',
+          '--platform=linux/amd64',
+          '-t', 'europe-west1-docker.pkg.dev/$PROJECT_ID/artbuddy-repo/artbuddy:$SHORT_SHA',
+          '-t', 'europe-west1-docker.pkg.dev/$PROJECT_ID/artbuddy-repo/artbuddy:latest', # Also tag as latest
+          '.'
+        ]
+  id: Build
+
+# 2. Push the container image to Artifact Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'europe-west1-docker.pkg.dev/$PROJECT_ID/artbuddy-repo/artbuddy']
+  id: Push
+  waitFor: ['Build'] # Wait for build step to complete
+
+# 3. Deploy container image to Cloud Run
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: gcloud
+  args:
+    - 'run'
+    - 'deploy'
+    - 'artbuddy-service' # Your Cloud Run service name
+    - '--image=europe-west1-docker.pkg.dev/$PROJECT_ID/artbuddy-repo/artbuddy:latest'
+    - '--region=europe-west1'
+    - '--platform=managed'
+    - '--allow-unauthenticated'
+    - '--port=80'
+    # Ensure all required secrets are mapped here
+    - '--set-secrets=NEO4J_URI=NEO4J_URI:latest,NEO4J_USER=NEO4J_USER:latest,NEO4J_PASSWORD=NEO4J_PASSWORD:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,APP_PIN=APP_PIN:latest'
+    - '--cpu-boost'
+    - '--timeout=600'
+  id: Deploy
+  waitFor: ['Push'] # Wait for push step to complete
+
+# Indicate the images built
+images:
+  - 'europe-west1-docker.pkg.dev/$PROJECT_ID/artbuddy-repo/artbuddy:$SHORT_SHA'
+  - 'europe-west1-docker.pkg.dev/$PROJECT_ID/artbuddy-repo/artbuddy:latest'
+
+# Optional: Set timeout for the build
+timeout: '1200s' # 20 minutes
+
+# Add logging option to satisfy service account requirements
+options:
+  logging: CLOUD_LOGGING_ONLY 
