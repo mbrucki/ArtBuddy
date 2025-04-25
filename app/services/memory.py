@@ -97,8 +97,13 @@ async def check_city_exists(name: str) -> bool:
         logger.error(f"Error during node search check for City '{name.title()}': {e}", exc_info=True)
         return False
 
-async def answer_question_from_kg(query: str, session_id: str) -> str:
-    """Attempts to answer a user's question using knowledge graph search via graphiti service."""
+async def answer_question_from_kg(query: str, session_id: str) -> list[str] | None:
+    """Attempts to answer a user's question using knowledge graph search via graphiti service.
+
+    Returns:
+        list[str]: A list of relevant facts found.
+        None: If no results found or an error occurred.
+    """
     logger.info(f"[{session_id}] Attempting KG search to answer query: '{query}'")
     try:
         # Use the graphiti service wrapper
@@ -106,16 +111,21 @@ async def answer_question_from_kg(query: str, session_id: str) -> str:
         if memory_results:
             facts = [res.fact for res in memory_results if hasattr(res, 'fact') and res.fact and isinstance(res.fact, str)]
             if facts:
-                answer = "Based on what I know: " + "; ".join(facts[:3])
-                logger.info(f"[{session_id}] Generated answer from KG search results: '{answer}'")
-                return answer
+                # answer = "Based on what I know: " + "; ".join(facts[:3])
+                # logger.info(f"[{session_id}] Generated answer from KG search results: '{answer}'")
+                # return answer
+                logger.info(f"[{session_id}] Extracted {len(facts)} facts from KG search results.")
+                return facts[:3] # Return top 3 raw facts
             else:
                 logger.info(f"[{session_id}] KG search returned results but no usable facts extracted.")
-                return "I found some related information, but couldn't form a direct answer."
+                # return "I found some related information, but couldn't form a direct answer."
+                return None # Indicate no usable facts
         else:
             logger.info(f"[{session_id}] KG search returned no results for the query.")
-            return "I don't have specific information about that in my memory right now."
+            # return "I don't have specific information about that in my memory right now."
+            return None # Indicate no results
     except Exception as e:
         # Catch potential errors from search_graph if it doesn't handle them fully
         logger.error(f"[{session_id}] Error during KG search for answering question '{query}': {e}", exc_info=True)
-        return "Sorry, I encountered an error trying to look that up." 
+        # return "Sorry, I encountered an error trying to look that up."
+        return None # Indicate error 

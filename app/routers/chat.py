@@ -267,19 +267,42 @@ async def send_message(message_req: MessageRequest):
 
         if is_question:
             # --- QUESTION HANDLING FLOW ---
-            logger.info(f"[{session_id}] User message is a question. Answering from KG.")
-            # Use memory service
-            answer_content = await answer_question_from_kg(user_message, session_id)
+            logger.info(f"[{session_id}] User message is a question. Answering from KG + LLM.")
+            # Use memory service to get facts
+            # answer_content = await answer_question_from_kg(user_message, session_id)
+            kg_facts = await answer_question_from_kg(user_message, session_id)
 
-            final_response_content = answer_content
+            # final_response_content = answer_content
+            final_response_content = ""
+            if kg_facts is None:
+                # Handle error or no results from KG
+                logger.warning(f"[{session_id}] No facts found or error during KG search for question.")
+                # You could have different messages for error vs. no facts
+                final_response_content = "I looked for information about that, but couldn't find anything specific in my current memory. Perhaps you could tell me more?"
+            else:
+                # Use LLM to generate response based on facts and history
+                logger.info(f"[{session_id}] Found {len(kg_facts)} facts. Generating LLM answer.")
+                try:
+                    final_response_content = generate_sync_response(
+                        chat_histories[session_id], # Pass full history
+                        kg_facts,                   # Pass facts as context
+                        user_message,               # Pass the original question
+                        current_session_state.get("name"), # Pass user name if known
+                        current_session_state.get("city")  # Pass user city if known
+                    )
+                except Exception as e_llm_answer:
+                    logger.error(f"[{session_id}] Error generating LLM answer for question: {e_llm_answer}", exc_info=True)
+                    final_response_content = "I found some information, but had trouble phrasing an answer. Can you ask differently?"
+
             is_session_over = False
             if session_start_time and isinstance(session_start_time, datetime):
                 elapsed_time = datetime.now(timezone.utc) - session_start_time
-                max_duration = timedelta(minutes=60)
+                max_duration = timedelta(minutes=60) # Keep updated limit
                 logger.info(f"[{session_id}] Duration Check (Question): Elapsed='{elapsed_time}'")
                 if elapsed_time > max_duration:
                     is_session_over = True
                     logger.info(f"[{session_id}] Session duration exceeded (Question). Ending.")
+                    # Override LLM response if session ended
                     final_response_content = "That's all the time we have for today. Thank you for sharing! Goodbye."
             else:
                  logger.warning(f"Invalid session_start_time (Question): '{session_start_time}'.")
