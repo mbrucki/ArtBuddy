@@ -10,8 +10,11 @@ NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
 NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD', 'password')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
-# Hardcoded PIN (Consider moving to env var if security is critical)
-APP_PIN = os.environ.get("APP_PIN", "6712")
+# PIN Configuration
+# To disable the PIN check, leave the APP_PIN environment variable unset.
+# The application will default to None, bypassing the check.
+# To enable the PIN check, set the APP_PIN environment variable to your desired PIN.
+APP_PIN = os.environ.get("APP_PIN", None) # Default to None to disable PIN check
 
 # Basic validation
 if not all([NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD]):

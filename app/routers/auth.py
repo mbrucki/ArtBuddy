@@ -21,7 +21,9 @@ templates = Jinja2Templates(directory="templates")
 # --- Step 1: PIN Entry ---
 @router.get("/", response_class=HTMLResponse)
 async def get_pin_entry(request: Request):
-    """Serves the initial PIN entry page and creates a session."""
+    """Serves the initial PIN entry page and creates a session.
+    If APP_PIN is None, redirects directly to terms page.
+    """
     session_id = str(uuid.uuid4())
     logger.info(f"New session initiation request, generated ID: {session_id}")
 
@@ -40,6 +42,14 @@ async def get_pin_entry(request: Request):
     }
     logger.info(f"[{session_id}] Initialized empty state for session.")
 
+    # If PIN check is disabled, redirect straight to terms
+    if APP_PIN is None:
+        logger.info(f"[{session_id}] PIN check disabled. Redirecting directly to terms.")
+        terms_url = request.url_for('get_terms').include_query_params(session_id=session_id)
+        return RedirectResponse(terms_url, status_code=303)
+
+    # Otherwise, show the PIN entry page
+    logger.info(f"[{session_id}] PIN check enabled. Showing PIN entry page.")
     return templates.TemplateResponse(
         "pin_entry.html",
         {"request": request, "session_id": session_id, "error": None}
@@ -54,8 +64,9 @@ async def post_pin_entry(request: Request, session_id: str = Form(...), pin: str
         logger.warning(f"[{session_id}] PIN submitted for unknown session. Redirecting to start.")
         return RedirectResponse("/", status_code=303)
 
-    if pin == APP_PIN:
-        logger.info(f"[{session_id}] PIN correct. Redirecting to terms.")
+    # Check if PIN is enabled and if it matches
+    if not APP_PIN or pin == APP_PIN:
+        logger.info(f"[{session_id}] PIN correct (or check disabled). Redirecting to terms.")
         # Redirect to GET /terms
         terms_url = request.url_for('get_terms').include_query_params(session_id=session_id)
         return RedirectResponse(terms_url, status_code=303)
