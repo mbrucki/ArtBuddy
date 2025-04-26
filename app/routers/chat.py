@@ -168,7 +168,6 @@ async def send_message(message_req: MessageRequest):
             logger.info(f"[{session_id}] Processing original message '{original_message_to_add}' post-sequence.")
             if original_message_to_add and original_turn_id_to_add and original_timestamp_to_add:
                 try:
-                    # Use graphiti service
                     await add_message_episode(
                         conversation_id, original_turn_id_to_add, 'user',
                         original_message_to_add, original_timestamp_to_add
@@ -179,14 +178,12 @@ async def send_message(message_req: MessageRequest):
             else:
                 logger.error(f"Failed to add original episode post-sequence: Missing details.")
 
-            # Use llm service
             acknowledgement = generate_acknowledgement(original_message_to_add)
             chat_histories[session_id].append({"role": "assistant", "content": acknowledgement})
             ack_turn_id = turn_id + 1
             user_name_context = session_state.get("name")
             ack_for_graph = f"[User: {user_name_context}] {acknowledgement}" if user_name_context else acknowledgement
             try:
-                # Use graphiti service
                 await add_message_episode(conversation_id, ack_turn_id, 'bot', ack_for_graph, datetime.now(timezone.utc))
                 logger.info(f"[{session_id}] Added acknowledgement episode post-sequence.")
             except Exception as e_add_ack_post:
@@ -208,13 +205,11 @@ async def send_message(message_req: MessageRequest):
             if not is_session_over:
                 extracted_memory_facts = []
                 try:
-                    # Use memory service (which uses graphiti service)
                     memory_results = await search_graph(original_message_to_add)
                     extracted_memory_facts = [res.fact for res in memory_results if hasattr(res, 'fact') and res.fact and isinstance(res.fact, str)]
                 except Exception as e_search_orig:
                     logger.error(f"Error searching memory post-sequence: {e_search_orig}", exc_info=True)
 
-                # Use llm service
                 follow_up_content = generate_sync_response(
                     chat_histories[session_id],
                     extracted_memory_facts,
@@ -269,10 +264,8 @@ async def send_message(message_req: MessageRequest):
             # --- QUESTION HANDLING FLOW ---
             logger.info(f"[{session_id}] User message is a question. Answering from KG + LLM.")
             # Use memory service to get facts
-            # answer_content = await answer_question_from_kg(user_message, session_id)
             kg_facts = await answer_question_from_kg(user_message, session_id)
 
-            # final_response_content = answer_content
             final_response_content = ""
             if kg_facts is None:
                 # Handle error or no results from KG
@@ -336,11 +329,9 @@ async def send_message(message_req: MessageRequest):
                         logger.info(f"[{session_id}] Skipping check for processed name: '{person_name}'")
                         continue
                     try:
-                        # Use memory service
                         person_details = await get_person_details(person_name)
                         if person_details and person_details["exists"]:
                             logger.info(f"[{session_id}] Person '{person_name}' pre-existed.")
-                            # Use memory service
                             person_fact_confirm = await get_person_fact(person_name)
                             if person_fact_confirm:
                                 logger.info(f"Adding '{person_name}' to confirmation list.")
@@ -384,7 +375,6 @@ async def send_message(message_req: MessageRequest):
 
             if not triggered_confirmation_sequence:
                 try:
-                    # Use graphiti service
                     await add_message_episode(
                         conversation_id, turn_id, 'user', user_message, request_start_time
                     )
@@ -392,14 +382,12 @@ async def send_message(message_req: MessageRequest):
                 except Exception as e_add_user_s:
                     logger.error(f"Error adding user statement episode (Turn {turn_id}): {e_add_user_s}", exc_info=True)
 
-                # Use llm service
                 acknowledgement = generate_acknowledgement(user_message, last_bot_message_content)
                 chat_histories[session_id].append({"role": "assistant", "content": acknowledgement})
                 ack_turn_id = turn_id + 1
                 user_name_context = current_session_state.get("name")
                 ack_for_graph = f"[User: {user_name_context}] {acknowledgement}" if user_name_context else acknowledgement
                 try:
-                    # Use graphiti service
                     await add_message_episode(conversation_id, ack_turn_id, 'bot', ack_for_graph, datetime.now(timezone.utc))
                     logger.info(f"[{session_id}] Added acknowledgement episode (standard flow).")
                 except Exception as e_add_ack:
@@ -421,13 +409,11 @@ async def send_message(message_req: MessageRequest):
                 extracted_memory_facts = []
                 if not is_session_over:
                     try:
-                        # Use memory service (which uses graphiti service)
                         memory_search_results_raw = await search_graph(user_message)
                         extracted_memory_facts = [res.fact for res in memory_search_results_raw if hasattr(res, 'fact') and res.fact and isinstance(res.fact, str)]
                     except Exception as e_search:
                         logger.error(f"Error searching memory: {e_search}", exc_info=True)
 
-                    # Use llm service
                     follow_up_content = generate_sync_response(
                         chat_histories[session_id],
                         extracted_memory_facts,

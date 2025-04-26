@@ -13,7 +13,7 @@ QUESTION_WORDS = (
 def is_direct_question(text: str) -> bool:
     """Check if the text likely starts with a question word or ends with a question mark."""
     if not isinstance(text, str):
-        return False # Handle non-string input gracefully
+        return False
     cleaned_text = text.strip().lower()
     starts_with_question_word = cleaned_text.startswith(QUESTION_WORDS)
     ends_with_question_mark = cleaned_text.endswith('?')
