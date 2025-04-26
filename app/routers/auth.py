@@ -7,7 +7,6 @@ from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 # Import config and state
-# from app.config import CORRECT_PIN
 from app.config import APP_PIN # Use the renamed variable
 from app.state import user_details, chat_histories # Direct state import (simple approach)
 

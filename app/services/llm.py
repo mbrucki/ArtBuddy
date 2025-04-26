@@ -29,7 +29,6 @@ def extract_entities(user_message: str, last_bot_message_content: Optional[str] 
         return {"self_name": None, "self_city": None, "mentioned_persons": []}
 
     logger.info(f"LLM extraction for: '{user_message}', Last Bot Msg: '{last_bot_message_content}'")
-    # ... (rest of the function body from original main.py) ...
     context_instruction = ""
     if last_bot_message_content:
         context_instruction = f"""CRITICAL CONTEXT: The previous bot message was: "{last_bot_message_content}"
@@ -107,7 +106,6 @@ def generate_acknowledgement(user_message: str, last_bot_message_content: Option
         return "Okay, got it." # Fallback
 
     logger.info(f"Generating acknowledgement for: '{user_message[:100]}...', Last Bot Msg: '{last_bot_message_content}'")
-    # ... (rest of the function body from original main.py) ...
     context_hint = ""
     if last_bot_message_content:
         context_hint = f"The bot's previous message was: \"{last_bot_message_content}\"."

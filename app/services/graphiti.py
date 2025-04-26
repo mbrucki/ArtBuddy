@@ -25,7 +25,6 @@ async def get_graphiti_instance() -> Graphiti:
         masked_password = "****" if NEO4J_PASSWORD else "None"
         logger.info(f"Using Neo4j Config: URI={NEO4J_URI}, User={NEO4J_USER}, Password={masked_password}")
         try:
-            # Use imported config values
             _graphiti_instance = Graphiti(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
             logger.info("Graphiti object created. Verifying Neo4j connection...")
             # Explicitly verify connection
